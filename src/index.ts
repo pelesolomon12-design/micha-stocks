@@ -11,7 +11,7 @@
  *   EMAIL_TO               - כתובת נמען
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { YoutubeTranscript } = require("youtube-transcript");
@@ -28,7 +28,7 @@ const STATE_FILE = path.join(__dirname, "..", "digest-state.json");
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!;
 const CHANNEL_ID = process.env.MICHA_STOCKS_CHANNEL_ID!;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
 const EMAIL_USER = process.env.EMAIL_USER!;
 const EMAIL_PASS = process.env.EMAIL_PASS!;
 const EMAIL_TO = process.env.EMAIL_TO!;
@@ -98,7 +98,8 @@ async function getTranscript(videoId: string): Promise<string | null> {
 async function summarizeByTopics(
   videos: Array<{ info: VideoInfo; transcript: string }>
 ): Promise<string> {
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const videosText = videos
     .map(({ info, transcript }) =>
@@ -106,11 +107,8 @@ async function summarizeByTopics(
     )
     .join("\n\n");
 
-  const stream = client.messages.stream({
-    model: "claude-opus-4-6",
-    max_tokens: 4096,
-    system: `אתה מומחה לשוק ההון ולסיכום תוכן.
-תקבל תמלולים של סרטונים מ"Micha Stocks" ועליך לכתוב סיכום מאורגן לפי נושאים.
+  const prompt = `אתה מומחה לשוק ההון ולסיכום תוכן.
+להלן תמלולי ${videos.length} סרטונים חדשים של Micha Stocks. אנא סכם לפי נושאים.
 
 כללים:
 - קבץ תכנים לפי נושא (מניה / חברה / תחום), גם אם הוזכרו בסרטונים שונים.
@@ -118,20 +116,12 @@ async function summarizeByTopics(
 - פרט מה נאמר, מה הדעה/המלצה, ומה הנימוק.
 - כתוב בעברית, בצורה קריאה ומובנת.
 - אל תחזור על אותו מידע פעמיים.
-- בסוף: "סרטונים שעובדו" עם הכותרות והתאריכים.`,
-    messages: [{
-      role: "user",
-      content: `להלן תמלולי ${videos.length} סרטונים חדשים של Micha Stocks. אנא סכם לפי נושאים:\n\n${videosText}`,
-    }],
-  });
+- בסוף: "סרטונים שעובדו" עם הכותרות והתאריכים.
 
-  let summary = "";
-  for await (const event of stream) {
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      summary += event.delta.text;
-    }
-  }
-  return summary;
+${videosText}`;
+
+  const result = await model.generateContent(prompt);
+  return result.response.text();
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
@@ -169,7 +159,7 @@ async function runDigest() {
   const missing = [
     ["YOUTUBE_API_KEY", YOUTUBE_API_KEY],
     ["MICHA_STOCKS_CHANNEL_ID", CHANNEL_ID],
-    ["ANTHROPIC_API_KEY", ANTHROPIC_API_KEY],
+    ["GEMINI_API_KEY", GEMINI_API_KEY],
     ["EMAIL_USER", EMAIL_USER],
     ["EMAIL_PASS", EMAIL_PASS],
     ["EMAIL_TO", EMAIL_TO],
