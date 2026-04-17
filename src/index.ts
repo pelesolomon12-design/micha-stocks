@@ -3,7 +3,6 @@
  * כל יומיים: מוריד סרטונים חדשים, מסכם לפי נושאים, ושולח במייל.
  *
  * משתני סביבה נדרשים:
- *   YOUTUBE_API_KEY         - מפתח YouTube Data API v3
  *   MICHA_STOCKS_CHANNEL_ID - מזהה ערוץ YouTube
  *   GEMINI_API_KEY          - מפתח Gemini API
  *   EMAIL_USER              - כתובת שולח (Gmail)
@@ -12,7 +11,6 @@
  */
 
 import nodemailer from "nodemailer";
-import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -22,7 +20,6 @@ const STATE_FILE = path.join(__dirname, "..", "digest-state.json");
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!;
 const CHANNEL_ID = process.env.MICHA_STOCKS_CHANNEL_ID!;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
 const EMAIL_USER = process.env.EMAIL_USER!;
@@ -47,7 +44,7 @@ function saveState(state: DigestState) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
 }
 
-// ─── YouTube – שליפת סרטונים ─────────────────────────────────────────────────
+// ─── YouTube RSS – שליפת סרטונים ללא API key ─────────────────────────────────
 
 interface VideoInfo {
   id: string;
@@ -58,32 +55,37 @@ interface VideoInfo {
 }
 
 async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
-  const youtube = google.youtube({ version: "v3", auth: YOUTUBE_API_KEY });
-  const searchRes = await youtube.search.list({
-    channelId: CHANNEL_ID,
-    part: ["snippet"],
-    order: "date",
-    type: ["video"],
-    maxResults: 20,
-    publishedAfter: sinceDate.toISOString(),
-  });
+  const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${CHANNEL_ID}`;
+  const res = await fetch(rssUrl);
+  if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
 
-  const ids = (searchRes.data.items ?? []).map((i) => i.id!.videoId!).filter(Boolean);
-  if (ids.length === 0) return [];
+  const xml = await res.text();
 
-  // שליפת תיאורים מלאים
-  const detailRes = await youtube.videos.list({
-    id: ids,
-    part: ["snippet"],
-  });
+  // פרסור פשוט של XML
+  const entries = xml.split("<entry>").slice(1);
+  const videos: VideoInfo[] = [];
 
-  return (detailRes.data.items ?? []).map((item) => ({
-    id: item.id!,
-    title: item.snippet!.title!,
-    publishedAt: item.snippet!.publishedAt!,
-    url: `https://www.youtube.com/watch?v=${item.id}`,
-    description: item.snippet!.description ?? "",
-  }));
+  for (const entry of entries) {
+    const id = (entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) ?? [])[1];
+    const title = (entry.match(/<title>([^<]+)<\/title>/) ?? [])[1];
+    const published = (entry.match(/<published>([^<]+)<\/published>/) ?? [])[1];
+    const description = (entry.match(/<media:description>([^<]*)<\/media:description>/) ?? [])[1] ?? "";
+
+    if (!id || !title || !published) continue;
+
+    const publishedDate = new Date(published);
+    if (publishedDate <= sinceDate) continue;
+
+    videos.push({
+      id,
+      title: title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"'),
+      publishedAt: published,
+      url: `https://www.youtube.com/watch?v=${id}`,
+      description: description.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+    });
+  }
+
+  return videos;
 }
 
 // ─── Gemini – סיכום לפי נושאים ───────────────────────────────────────────────
@@ -152,9 +154,7 @@ async function sendEmail(subject: string, html: string) {
   });
   await transporter.sendMail({
     from: `"Micha Stocks Digest" <${EMAIL_USER}>`,
-    to: EMAIL_TO.split(",")
-      .map((e) => e.trim())
-      .join(", "),
+    to: EMAIL_TO.split(",").map((e) => e.trim()).join(", "),
     subject,
     html,
   });
@@ -166,7 +166,6 @@ async function runDigest() {
   console.log("🚀 מתחיל digest של Micha Stocks...");
 
   const missing = [
-    ["YOUTUBE_API_KEY", YOUTUBE_API_KEY],
     ["MICHA_STOCKS_CHANNEL_ID", CHANNEL_ID],
     ["GEMINI_API_KEY", GEMINI_API_KEY],
     ["EMAIL_USER", EMAIL_USER],
