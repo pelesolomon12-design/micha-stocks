@@ -3,20 +3,21 @@
  * כל יומיים: מוריד סרטונים חדשים, מסכם לפי נושאים, ושולח במייל.
  *
  * משתני סביבה נדרשים:
- *   YOUTUBE_API_KEY        - מפתח YouTube Data API v3
+ *   YOUTUBE_API_KEY         - מפתח YouTube Data API v3
  *   MICHA_STOCKS_CHANNEL_ID - מזהה ערוץ YouTube
- *   ANTHROPIC_API_KEY      - מפתח Claude API
- *   EMAIL_USER             - כתובת שולח (Gmail)
- *   EMAIL_PASS             - סיסמת אפליקציה של Gmail
- *   EMAIL_TO               - כתובת נמען
+ *   GEMINI_API_KEY          - מפתח Gemini API
+ *   EMAIL_USER              - כתובת שולח (Gmail)
+ *   EMAIL_PASS              - סיסמת אפליקציה של Gmail
+ *   EMAIL_TO                - כתובת נמען (אפשר כמה, מופרדים בפסיק)
  */
 
-import { execSync } from "child_process";
 import nodemailer from "nodemailer";
 import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+// @ts-ignore
+import ytDlp from "yt-dlp-exec";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(__dirname, "..", "digest-state.json");
@@ -48,7 +49,7 @@ function saveState(state: DigestState) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
 }
 
-// ─── YouTube ──────────────────────────────────────────────────────────────────
+// ─── YouTube – שליפת סרטונים ─────────────────────────────────────────────────
 
 interface VideoInfo {
   id: string;
@@ -75,28 +76,42 @@ async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
   }));
 }
 
+// ─── Transcript – שליפת כתוביות עם yt-dlp ───────────────────────────────────
+
 async function getTranscript(videoId: string): Promise<string | null> {
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const output = execSync(
-      `yt-dlp --skip-download --write-auto-sub --write-sub --sub-langs "he,iw,en" --sub-format vtt --print-to-file subtitle - "${url}" 2>/dev/null || yt-dlp --skip-download --write-auto-sub --sub-format vtt --print-to-file subtitle - "${url}" 2>/dev/null`,
-      { encoding: "utf-8", timeout: 30000 }
-    );
-    // strip VTT formatting tags
-    return output.replace(/<[^>]+>/g, "").replace(/\d{2}:\d{2}:\d{2}\.\d+ --> .+/g, "").replace(/\n{3,}/g, "\n").trim() || null;
+    const result = await ytDlp(url, {
+      skipDownload: true,
+      writeAutoSub: true,
+      writeSub: true,
+      subLangs: "he,iw,en",
+      subFormat: "vtt",
+      printToFile: { subtitle: "-" },
+      noWarnings: true,
+      quiet: true,
+    });
+    const text = String(result ?? "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\d{2}:\d{2}:\d{2}\.\d+ --> .+/g, "")
+      .replace(/WEBVTT\n/g, "")
+      .replace(/\n{3,}/g, "\n")
+      .trim();
+    return text || null;
   } catch {
     return null;
   }
 }
 
-// ─── Claude ───────────────────────────────────────────────────────────────────
+// ─── Gemini – סיכום לפי נושאים ───────────────────────────────────────────────
 
 async function summarizeByTopics(
   videos: Array<{ info: VideoInfo; transcript: string }>
 ): Promise<string> {
   const videosText = videos
-    .map(({ info, transcript }) =>
-      `=== סרטון: "${info.title}" (${info.publishedAt.slice(0, 10)}) ===\n${transcript}`
+    .map(
+      ({ info, transcript }) =>
+        `=== סרטון: "${info.title}" (${info.publishedAt.slice(0, 10)}) ===\n${transcript}`
     )
     .join("\n\n");
 
@@ -121,8 +136,13 @@ ${videosText}`;
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
     }
   );
-  if (!res.ok) throw new Error(`Gemini API error: ${res.status} ${await res.text()}`);
-  const data = await res.json() as any;
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${errText}`);
+  }
+
+  const data = (await res.json()) as any;
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
@@ -130,14 +150,18 @@ ${videosText}`;
 
 function markdownToHtml(md: string): string {
   return md
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
     .replace(/^### (.+)$/gm, "<h3>$1</h3>")
     .replace(/^## (.+)$/gm, "<h2>$1</h2>")
     .replace(/^# (.+)$/gm, "<h1>$1</h1>")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")
-    .replace(/^/, "<p>").replace(/$/, "</p>");
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/\n/g, "<br>")
+    .replace(/^/, "<p>")
+    .replace(/$/, "</p>");
 }
 
 async function sendEmail(subject: string, html: string) {
@@ -147,7 +171,9 @@ async function sendEmail(subject: string, html: string) {
   });
   await transporter.sendMail({
     from: `"Micha Stocks Digest" <${EMAIL_USER}>`,
-    to: EMAIL_TO.split(",").map(e => e.trim()).join(", "),
+    to: EMAIL_TO.split(",")
+      .map((e) => e.trim())
+      .join(", "),
     subject,
     html,
   });
@@ -165,7 +191,9 @@ async function runDigest() {
     ["EMAIL_USER", EMAIL_USER],
     ["EMAIL_PASS", EMAIL_PASS],
     ["EMAIL_TO", EMAIL_TO],
-  ].filter(([, v]) => !v).map(([k]) => k);
+  ]
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
 
   if (missing.length) {
     console.error("❌ חסרים משתני סביבה:", missing.join(", "));
@@ -180,7 +208,9 @@ async function runDigest() {
   console.log(`📅 מחפש סרטונים מאז: ${sinceDate.toISOString()}`);
 
   const allVideos = await getRecentVideos(sinceDate);
-  const newVideos = allVideos.filter((v) => !state.processedVideoIds.includes(v.id));
+  const newVideos = allVideos.filter(
+    (v) => !state.processedVideoIds.includes(v.id)
+  );
 
   if (newVideos.length === 0) {
     console.log("✅ אין סרטונים חדשים.");
@@ -191,7 +221,8 @@ async function runDigest() {
 
   console.log(`📹 נמצאו ${newVideos.length} סרטונים חדשים`);
 
-  const videosWithTranscripts: Array<{ info: VideoInfo; transcript: string }> = [];
+  const videosWithTranscripts: Array<{ info: VideoInfo; transcript: string }> =
+    [];
   for (const video of newVideos) {
     console.log(`  📝 מוריד טרנסקריפט: "${video.title}"`);
     const transcript = await getTranscript(video.id);
@@ -207,7 +238,7 @@ async function runDigest() {
     return;
   }
 
-  console.log(`🤖 שולח ל-Claude...`);
+  console.log(`🤖 שולח ל-Gemini...`);
   const summary = await summarizeByTopics(videosWithTranscripts);
 
   const dateStr = new Date().toLocaleDateString("he-IL");
@@ -234,7 +265,6 @@ async function runDigest() {
   console.log("💾 State נשמר.");
 }
 
-// Railway cron: רץ כתהליך שמסתיים — Railway יפעיל אותו לפי לוח זמנים
 runDigest().catch((err) => {
   console.error("💥 שגיאה:", err);
   process.exit(1);

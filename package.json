@@ -11,7 +11,8 @@
     "@google/genai": "^1.50.1",
     "googleapis": "^144.0.0",
     "nodemailer": "^6.9.0",
-    "youtube-transcript": "^1.2.1"
+    "youtube-transcript": "^1.2.1",
+    "yt-dlp-exec": "^1.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
