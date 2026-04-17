@@ -12,8 +12,9 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import YoutubeTranscriptModule from "youtube-transcript";
-const YoutubeTranscript = YoutubeTranscriptModule.YoutubeTranscript ?? YoutubeTranscriptModule;
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { YoutubeTranscript } = require("youtube-transcript");
 import nodemailer from "nodemailer";
 import { google } from "googleapis";
 import fs from "fs";
