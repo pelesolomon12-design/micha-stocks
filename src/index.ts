@@ -12,9 +12,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const { YoutubeTranscript } = require("youtube-transcript");
+import { execSync } from "child_process";
 import nodemailer from "nodemailer";
 import { google } from "googleapis";
 import fs from "fs";
@@ -80,14 +78,13 @@ async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
 
 async function getTranscript(videoId: string): Promise<string | null> {
   try {
-    for (const lang of ["he", "iw", "en"]) {
-      try {
-        const entries = await YoutubeTranscript.fetchTranscript(videoId, { lang });
-        if (entries.length > 0) return entries.map((e) => e.text).join(" ");
-      } catch { /* try next */ }
-    }
-    const entries = await YoutubeTranscript.fetchTranscript(videoId);
-    return entries.map((e) => e.text).join(" ");
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const output = execSync(
+      `yt-dlp --skip-download --write-auto-sub --write-sub --sub-langs "he,iw,en" --sub-format vtt --print-to-file subtitle - "${url}" 2>/dev/null || yt-dlp --skip-download --write-auto-sub --sub-format vtt --print-to-file subtitle - "${url}" 2>/dev/null`,
+      { encoding: "utf-8", timeout: 30000 }
+    );
+    // strip VTT formatting tags
+    return output.replace(/<[^>]+>/g, "").replace(/\d{2}:\d{2}:\d{2}\.\d+ --> .+/g, "").replace(/\n{3,}/g, "\n").trim() || null;
   } catch {
     return null;
   }
