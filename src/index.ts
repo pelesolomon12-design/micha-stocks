@@ -79,26 +79,44 @@ async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
 // ─── Transcript – שליפת כתוביות עם yt-dlp ───────────────────────────────────
 
 async function getTranscript(videoId: string): Promise<string | null> {
+  const tmpDir = path.join(__dirname, "..", "tmp");
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const tmpBase = path.join(tmpDir, videoId);
+
   try {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const result = await ytDlp(url, {
+    await ytDlp(url, {
       skipDownload: true,
       writeAutoSub: true,
       writeSub: true,
       subLangs: "he,iw,en",
       subFormat: "vtt",
-      printToFile: { subtitle: "-" },
+      output: tmpBase,
       noWarnings: true,
       quiet: true,
     });
-    const text = String(result ?? "")
+
+    // מחפש קובץ כתוביות שנוצר
+    const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && f.endsWith(".vtt"));
+    if (files.length === 0) return null;
+
+    const content = fs.readFileSync(path.join(tmpDir, files[0]), "utf-8");
+    // מנקה את פורמט VTT
+    const text = content
+      .replace(/WEBVTT[\s\S]*?\n\n/, "")
+      .replace(/\d{2}:\d{2}:\d{2}\.\d+ --> [\s\S]+?\n/g, "")
       .replace(/<[^>]+>/g, "")
-      .replace(/\d{2}:\d{2}:\d{2}\.\d+ --> .+/g, "")
-      .replace(/WEBVTT\n/g, "")
-      .replace(/\n{3,}/g, "\n")
+      .replace(/\n{2,}/g, " ")
       .trim();
+
+    // מוחק קבצים זמניים
+    files.forEach(f => fs.unlinkSync(path.join(tmpDir, f)));
     return text || null;
   } catch {
+    // מנקה קבצים זמניים במקרה של שגיאה
+    try {
+      fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId)).forEach(f => fs.unlinkSync(path.join(tmpDir, f)));
+    } catch {}
     return null;
   }
 }
