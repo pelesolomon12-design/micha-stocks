@@ -56,7 +56,9 @@ interface VideoInfo {
 
 async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
   const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${CHANNEL_ID}`;
-  const res = await fetch(rssUrl);
+  const res = await fetch(rssUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; digest-bot/1.0)" },
+  });
   if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
 
   const xml = await res.text();
@@ -88,7 +90,7 @@ async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
   return videos;
 }
 
-// ─── Gemini – סיכום לפי נושאים ───────────────────────────────────────────────
+// ─── Gemini – סיכום לפי נושאים ──────────────────────────────────────────────
 
 async function summarizeByTopics(videos: VideoInfo[]): Promise<string> {
   const videosText = videos
@@ -112,7 +114,7 @@ async function summarizeByTopics(videos: VideoInfo[]): Promise<string> {
 ${videosText}`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
