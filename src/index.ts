@@ -11,7 +11,6 @@
  *   EMAIL_TO               - כתובת נמען
  */
 
-import { GoogleGenAI } from "@google/genai";
 import { execSync } from "child_process";
 import nodemailer from "nodemailer";
 import { google } from "googleapis";
@@ -95,8 +94,6 @@ async function getTranscript(videoId: string): Promise<string | null> {
 async function summarizeByTopics(
   videos: Array<{ info: VideoInfo; transcript: string }>
 ): Promise<string> {
-  const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-
   const videosText = videos
     .map(({ info, transcript }) =>
       `=== סרטון: "${info.title}" (${info.publishedAt.slice(0, 10)}) ===\n${transcript}`
@@ -116,11 +113,17 @@ async function summarizeByTopics(
 
 ${videosText}`;
 
-  const result = await genAI.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
-  });
-  return result.text ?? "";
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    }
+  );
+  if (!res.ok) throw new Error(`Gemini API error: ${res.status} ${await res.text()}`);
+  const data = await res.json() as any;
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
