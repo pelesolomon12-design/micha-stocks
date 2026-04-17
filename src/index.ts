@@ -1,5 +1,5 @@
 /**
- * מיקה סטוקס – דייג'סט אוטומטי
+ * Micha Stocks – דייג'סט אוטומטי
  * כל יומיים: מוריד סרטונים חדשים, מסכם לפי נושאים, ושולח במייל.
  *
  * משתני סביבה נדרשים:
@@ -109,7 +109,7 @@ async function summarizeByTopics(
     max_tokens: 4096,
     thinking: { type: "adaptive" },
     system: `אתה מומחה לשוק ההון ולסיכום תוכן.
-תקבל תמלולים של סרטונים מ"מיקה סטוקס" ועליך לכתוב סיכום מאורגן לפי נושאים.
+תקבל תמלולים של סרטונים מ"Micha Stocks" ועליך לכתוב סיכום מאורגן לפי נושאים.
 
 כללים:
 - קבץ תכנים לפי נושא (מניה / חברה / תחום), גם אם הוזכרו בסרטונים שונים.
@@ -120,7 +120,7 @@ async function summarizeByTopics(
 - בסוף: "סרטונים שעובדו" עם הכותרות והתאריכים.`,
     messages: [{
       role: "user",
-      content: `להלן תמלולי ${videos.length} סרטונים חדשים של מיקה סטוקס. אנא סכם לפי נושאים:\n\n${videosText}`,
+      content: `להלן תמלולי ${videos.length} סרטונים חדשים של Micha Stocks. אנא סכם לפי נושאים:\n\n${videosText}`,
     }],
   });
 
@@ -153,7 +153,7 @@ async function sendEmail(subject: string, html: string) {
     auth: { user: EMAIL_USER, pass: EMAIL_PASS },
   });
   await transporter.sendMail({
-    from: `"מיקה סטוקס Digest" <${EMAIL_USER}>`,
+    from: `"Micha Stocks Digest" <${EMAIL_USER}>`,
     to: EMAIL_TO,
     subject,
     html,
@@ -163,7 +163,7 @@ async function sendEmail(subject: string, html: string) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function runDigest() {
-  console.log("🚀 מתחיל digest של מיקה סטוקס...");
+  console.log("🚀 מתחיל digest של Micha Stocks...");
 
   const missing = [
     ["YOUTUBE_API_KEY", YOUTUBE_API_KEY],
@@ -218,10 +218,10 @@ async function runDigest() {
   const summary = await summarizeByTopics(videosWithTranscripts);
 
   const dateStr = new Date().toLocaleDateString("he-IL");
-  const subject = `📊 מיקה סטוקס Digest – ${dateStr}`;
+  const subject = `📊 Micha Stocks Digest – ${dateStr}`;
   const html = `
     <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 800px; margin: auto;">
-      <h1 style="color: #1a365d;">📊 מיקה סטוקס – סיכום נושאים</h1>
+      <h1 style="color: #1a365d;">📊 Micha Stocks – סיכום נושאים</h1>
       <p style="color: #666;">עודכן: ${dateStr} | ${videosWithTranscripts.length} סרטונים חדשים</p>
       <hr>
       ${markdownToHtml(summary)}

@@ -1,5 +1,5 @@
 /**
- * עוזר למצוא את ה-Channel ID של מיקה סטוקס
+ * עוזר למצוא את ה-Channel ID של Micha Stocks
  * הפעל: YOUTUBE_API_KEY=xxx npm run find-channel
  */
 import { google } from "googleapis";
