@@ -1,2 +1,5 @@
+[build]
+builder = "nixpacks"
+
 [deploy]
 startCommand = "npx tsx src/index.ts"
