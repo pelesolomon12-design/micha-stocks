@@ -16,8 +16,6 @@ import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-// @ts-ignore
-import ytDlp from "yt-dlp-exec";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(__dirname, "..", "digest-state.json");
@@ -56,11 +54,12 @@ interface VideoInfo {
   title: string;
   publishedAt: string;
   url: string;
+  description: string;
 }
 
 async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
   const youtube = google.youtube({ version: "v3", auth: YOUTUBE_API_KEY });
-  const res = await youtube.search.list({
+  const searchRes = await youtube.search.list({
     channelId: CHANNEL_ID,
     part: ["snippet"],
     order: "date",
@@ -68,73 +67,37 @@ async function getRecentVideos(sinceDate: Date): Promise<VideoInfo[]> {
     maxResults: 20,
     publishedAfter: sinceDate.toISOString(),
   });
-  return (res.data.items ?? []).map((item) => ({
-    id: item.id!.videoId!,
+
+  const ids = (searchRes.data.items ?? []).map((i) => i.id!.videoId!).filter(Boolean);
+  if (ids.length === 0) return [];
+
+  // שליפת תיאורים מלאים
+  const detailRes = await youtube.videos.list({
+    id: ids,
+    part: ["snippet"],
+  });
+
+  return (detailRes.data.items ?? []).map((item) => ({
+    id: item.id!,
     title: item.snippet!.title!,
     publishedAt: item.snippet!.publishedAt!,
-    url: `https://www.youtube.com/watch?v=${item.id!.videoId}`,
+    url: `https://www.youtube.com/watch?v=${item.id}`,
+    description: item.snippet!.description ?? "",
   }));
-}
-
-// ─── Transcript – שליפת כתוביות עם yt-dlp ───────────────────────────────────
-
-async function getTranscript(videoId: string): Promise<string | null> {
-  const tmpDir = path.join(__dirname, "..", "tmp");
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const tmpBase = path.join(tmpDir, videoId);
-
-  try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    await ytDlp(url, {
-      skipDownload: true,
-      writeAutoSub: true,
-      writeSub: true,
-      subLangs: "he,iw,en",
-      subFormat: "vtt",
-      output: tmpBase,
-      noWarnings: true,
-      quiet: true,
-    });
-
-    // מחפש קובץ כתוביות שנוצר
-    const files = fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId) && f.endsWith(".vtt"));
-    if (files.length === 0) return null;
-
-    const content = fs.readFileSync(path.join(tmpDir, files[0]), "utf-8");
-    // מנקה את פורמט VTT
-    const text = content
-      .replace(/WEBVTT[\s\S]*?\n\n/, "")
-      .replace(/\d{2}:\d{2}:\d{2}\.\d+ --> [\s\S]+?\n/g, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/\n{2,}/g, " ")
-      .trim();
-
-    // מוחק קבצים זמניים
-    files.forEach(f => fs.unlinkSync(path.join(tmpDir, f)));
-    return text || null;
-  } catch {
-    // מנקה קבצים זמניים במקרה של שגיאה
-    try {
-      fs.readdirSync(tmpDir).filter(f => f.startsWith(videoId)).forEach(f => fs.unlinkSync(path.join(tmpDir, f)));
-    } catch {}
-    return null;
-  }
 }
 
 // ─── Gemini – סיכום לפי נושאים ───────────────────────────────────────────────
 
-async function summarizeByTopics(
-  videos: Array<{ info: VideoInfo; transcript: string }>
-): Promise<string> {
+async function summarizeByTopics(videos: VideoInfo[]): Promise<string> {
   const videosText = videos
     .map(
-      ({ info, transcript }) =>
-        `=== סרטון: "${info.title}" (${info.publishedAt.slice(0, 10)}) ===\n${transcript}`
+      (v) =>
+        `=== סרטון: "${v.title}" (${v.publishedAt.slice(0, 10)}) ===\n${v.description || "(אין תיאור)"}`
     )
     .join("\n\n");
 
   const prompt = `אתה מומחה לשוק ההון ולסיכום תוכן.
-להלן תמלולי ${videos.length} סרטונים חדשים של Micha Stocks. אנא סכם לפי נושאים.
+להלן תיאורי ${videos.length} סרטונים חדשים של Micha Stocks. אנא סכם לפי נושאים.
 
 כללים:
 - קבץ תכנים לפי נושא (מניה / חברה / תחום), גם אם הוזכרו בסרטונים שונים.
@@ -238,33 +201,17 @@ async function runDigest() {
   }
 
   console.log(`📹 נמצאו ${newVideos.length} סרטונים חדשים`);
-
-  const videosWithTranscripts: Array<{ info: VideoInfo; transcript: string }> =
-    [];
-  for (const video of newVideos) {
-    console.log(`  📝 מוריד טרנסקריפט: "${video.title}"`);
-    const transcript = await getTranscript(video.id);
-    if (transcript) {
-      videosWithTranscripts.push({ info: video, transcript });
-    } else {
-      console.warn(`  ⚠️  אין כתוביות ל-"${video.title}"`);
-    }
-  }
-
-  if (videosWithTranscripts.length === 0) {
-    console.warn("⚠️  לאף סרטון אין טרנסקריפט זמין.");
-    return;
-  }
+  newVideos.forEach((v) => console.log(`  • "${v.title}" (${v.publishedAt.slice(0, 10)})`));
 
   console.log(`🤖 שולח ל-Gemini...`);
-  const summary = await summarizeByTopics(videosWithTranscripts);
+  const summary = await summarizeByTopics(newVideos);
 
   const dateStr = new Date().toLocaleDateString("he-IL");
   const subject = `📊 Micha Stocks Digest – ${dateStr}`;
   const html = `
     <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 800px; margin: auto;">
       <h1 style="color: #1a365d;">📊 Micha Stocks – סיכום נושאים</h1>
-      <p style="color: #666;">עודכן: ${dateStr} | ${videosWithTranscripts.length} סרטונים חדשים</p>
+      <p style="color: #666;">עודכן: ${dateStr} | ${newVideos.length} סרטונים חדשים</p>
       <hr>
       ${markdownToHtml(summary)}
     </div>
