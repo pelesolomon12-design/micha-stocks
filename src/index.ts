@@ -109,7 +109,6 @@ async function summarizeByTopics(
   const stream = client.messages.stream({
     model: "claude-opus-4-6",
     max_tokens: 4096,
-    thinking: { type: "adaptive" },
     system: `אתה מומחה לשוק ההון ולסיכום תוכן.
 תקבל תמלולים של סרטונים מ"Micha Stocks" ועליך לכתוב סיכום מאורגן לפי נושאים.
 
