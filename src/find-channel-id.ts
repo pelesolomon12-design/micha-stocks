@@ -9,7 +9,7 @@ if (!YOUTUBE_API_KEY) { console.error("❌ חסר YOUTUBE_API_KEY"); process.exi
 
 const youtube = google.youtube({ version: "v3", auth: YOUTUBE_API_KEY });
 const res = await youtube.search.list({
-  q: "מיקה סטוקס",
+  q: "Micha Stocks",
   type: ["channel"],
   part: ["snippet"],
   maxResults: 5,
