@@ -4,7 +4,7 @@
  *
  * משתני סביבה נדרשים:
  *   YOUTUBE_API_KEY        - מפתח YouTube Data API v3
- *   MIKA_STOKES_CHANNEL_ID - מזהה ערוץ YouTube
+ *   MICHA_STOCKS_CHANNEL_ID - מזהה ערוץ YouTube
  *   ANTHROPIC_API_KEY      - מפתח Claude API
  *   EMAIL_USER             - כתובת שולח (Gmail)
  *   EMAIL_PASS             - סיסמת אפליקציה של Gmail
@@ -25,7 +25,7 @@ const STATE_FILE = path.join(__dirname, "..", "digest-state.json");
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY!;
-const CHANNEL_ID = process.env.MIKA_STOKES_CHANNEL_ID!;
+const CHANNEL_ID = process.env.MICHA_STOCKS_CHANNEL_ID!;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 const EMAIL_USER = process.env.EMAIL_USER!;
 const EMAIL_PASS = process.env.EMAIL_PASS!;
@@ -167,7 +167,7 @@ async function runDigest() {
 
   const missing = [
     ["YOUTUBE_API_KEY", YOUTUBE_API_KEY],
-    ["MIKA_STOKES_CHANNEL_ID", CHANNEL_ID],
+    ["MICHA_STOCKS_CHANNEL_ID", CHANNEL_ID],
     ["ANTHROPIC_API_KEY", ANTHROPIC_API_KEY],
     ["EMAIL_USER", EMAIL_USER],
     ["EMAIL_PASS", EMAIL_PASS],
