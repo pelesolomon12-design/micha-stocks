@@ -154,7 +154,7 @@ async function sendEmail(subject: string, html: string) {
   });
   await transporter.sendMail({
     from: `"Micha Stocks Digest" <${EMAIL_USER}>`,
-    to: EMAIL_TO,
+    to: EMAIL_TO.split(",").map(e => e.trim()).join(", "),
     subject,
     html,
   });
