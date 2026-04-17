@@ -11,7 +11,7 @@
  *   EMAIL_TO               - כתובת נמען
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { YoutubeTranscript } = require("youtube-transcript");
@@ -98,8 +98,7 @@ async function getTranscript(videoId: string): Promise<string | null> {
 async function summarizeByTopics(
   videos: Array<{ info: VideoInfo; transcript: string }>
 ): Promise<string> {
-  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const videosText = videos
     .map(({ info, transcript }) =>
@@ -120,8 +119,11 @@ async function summarizeByTopics(
 
 ${videosText}`;
 
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  const result = await genAI.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: prompt,
+  });
+  return result.text ?? "";
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
