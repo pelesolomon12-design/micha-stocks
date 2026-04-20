@@ -5,12 +5,9 @@
  * משתני סביבה נדרשים:
  *   MICHA_STOCKS_CHANNEL_ID - מזהה ערוץ YouTube
  *   GEMINI_API_KEY          - מפתח Gemini API
- *   EMAIL_USER              - כתובת שולח (Gmail)
- *   EMAIL_PASS              - סיסמת אפליקציה של Gmail
+ *   RESEND_API_KEY          - מפתח Resend API
  *   EMAIL_TO                - כתובת נמען (אפשר כמה, מופרדים בפסיק)
  */
-
-import nodemailer from "nodemailer";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -22,8 +19,7 @@ const STATE_FILE = path.join(__dirname, "..", "digest-state.json");
 
 const CHANNEL_ID = process.env.MICHA_STOCKS_CHANNEL_ID!;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const EMAIL_USER = process.env.EMAIL_USER!;
-const EMAIL_PASS = process.env.EMAIL_PASS!;
+const RESEND_API_KEY = process.env.RESEND_API_KEY!;
 const EMAIL_TO = process.env.EMAIL_TO!;
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -175,16 +171,23 @@ function markdownToHtml(md: string): string {
 }
 
 async function sendEmail(subject: string, html: string) {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Micha Stocks Digest <onboarding@resend.dev>",
+      to: EMAIL_TO.split(",").map((e) => e.trim()),
+      subject,
+      html,
+    }),
   });
-  await transporter.sendMail({
-    from: `"Micha Stocks Digest" <${EMAIL_USER}>`,
-    to: EMAIL_TO.split(",").map((e) => e.trim()).join(", "),
-    subject,
-    html,
-  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Resend error ${res.status}: ${err}`);
+  }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -195,8 +198,7 @@ async function runDigest() {
   const missing = [
     ["MICHA_STOCKS_CHANNEL_ID", CHANNEL_ID],
     ["GEMINI_API_KEY", GEMINI_API_KEY],
-    ["EMAIL_USER", EMAIL_USER],
-    ["EMAIL_PASS", EMAIL_PASS],
+    ["RESEND_API_KEY", RESEND_API_KEY],
     ["EMAIL_TO", EMAIL_TO],
   ]
     .filter(([, v]) => !v)
