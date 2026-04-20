@@ -134,22 +134,31 @@ async function summarizeByTopics(videos: VideoInfo[]): Promise<string> {
 
 ${videosText}`;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  const models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"];
+  const body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] });
+
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        console.log(`✅ Gemini responded (model: ${model})`);
+        return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      }
+      const status = res.status;
+      if (status === 503 || status === 429) {
+        console.log(`⚠️ ${model} attempt ${attempt} → ${status}, waiting ${attempt * 10}s...`);
+        await new Promise((r) => setTimeout(r, attempt * 10000));
+      } else {
+        console.log(`⚠️ ${model} → ${status}, trying next model...`);
+        break;
+      }
     }
-  );
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${errText}`);
   }
-
-  const data = (await res.json()) as any;
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  throw new Error("All Gemini models unavailable after retries");
 }
 
 // ─── Email ────────────────────────────────────────────────────────────────────
