@@ -3,4 +3,4 @@ builder = "nixpacks"
 
 [deploy]
 startCommand = "npx tsx src/index.ts"
-cronSchedule = "* * * * *"
+cronSchedule = "0 8 */2 * *"
